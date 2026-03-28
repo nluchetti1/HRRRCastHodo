@@ -162,8 +162,8 @@
     
     // --- DATE LOGIC ---
     const now = new Date();
-    // Match the Python script delay: subtract 2 hours from current UTC time
-    now.setUTCHours(now.getUTCHours() - 2);
+    // Match the Python script delay: subtract 5 hours from current UTC time
+    now.setUTCHours(now.getUTCHours() - 5);
 
     const yyyy = now.getUTCFullYear();
     const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
