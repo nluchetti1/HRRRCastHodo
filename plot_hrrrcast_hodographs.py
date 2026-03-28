@@ -42,15 +42,10 @@ CAPE_COLORS = [
 CAPE_CMAP = mcolors.ListedColormap(CAPE_COLORS)
 CAPE_NORM = mcolors.BoundaryNorm(CAPE_LEVELS, CAPE_CMAP.N)
 
-# --- UH COLORS ---
-UH_LEVELS = [25, 50, 75, 100, 150, 200, 250]
-uh_colors = ['#c7f9cc', '#7cfc00', '#32cd32', '#008000', '#006400', '#000000']
-UH_CMAP = mcolors.ListedColormap(uh_colors)
-UH_NORM = mcolors.BoundaryNorm(UH_LEVELS, UH_CMAP.N)
-
 def get_latest_valid_run():
-    # Start checking from 2 hours ago, and look back up to 12 hours to account for S3 lag
-    now = datetime.datetime.utcnow()
+    # Start checking from 2 hours ago, and look back up to 12 hours to account for S3 lag.
+    # CRITICAL FIX: Zero out the minutes/seconds so the valid time displays cleanly!
+    now = datetime.datetime.utcnow().replace(minute=0, second=0, microsecond=0)
     
     for hours_back in range(2, 13):
         check_time = now - datetime.timedelta(hours=hours_back)
@@ -132,13 +127,6 @@ def process_forecast_hour(date_obj, date_str, run, fhr):
         ds_v = xr.open_dataset(grib_file, engine='cfgrib', backend_kwargs={'filter_by_keys': {'typeOfLevel': 'isobaricInhPa', 'shortName': 'v'}})
         ds_wind = xr.merge([ds_u, ds_v])
         ds_cape = xr.open_dataset(grib_file, engine='cfgrib', backend_kwargs={'filter_by_keys': {'shortName': 'cape', 'typeOfLevel': 'surface'}})
-        
-        ds_uh_max = None
-        try:
-            ds_uh_raw = xr.open_dataset(grib_file, engine='cfgrib', backend_kwargs={'filter_by_keys': {'typeOfLevel': 'heightAboveGroundLayer', 'stepType': 'max'}})
-            ds_uh_max = ds_uh_raw[list(ds_uh_raw.data_vars)[0]]
-        except Exception:
-            pass
 
         fig = plt.figure(figsize=(16, 12), facecolor='white')
         fig.subplots_adjust(bottom=0.18, top=0.93)
@@ -168,30 +156,6 @@ def process_forecast_hour(date_obj, date_str, run, fhr):
             cb_cape.set_ticks(spc_ticks)
             cb_cape.ax.set_xticklabels([str(t) for t in spc_ticks], fontsize=10)
             cb_cape.set_label('Surface-based CAPE (J/kg)', fontsize=12, weight='bold')
-            
-        # UH
-        if ds_uh_max is not None:
-            uh_vals = ds_uh_max.values.squeeze()
-            uh_masked = np.where(uh_vals >= 25, uh_vals, np.nan)
-            
-            uh_lats = ds_uh_max.latitude.values
-            uh_lons = ds_uh_max.longitude.values
-            uh_lons = (uh_lons + 180) % 360 - 180
-
-            has_data = not np.all(np.isnan(uh_masked)) and np.nanmax(uh_masked) >= 25
-
-            if has_data:
-                cf_uh = ax.contourf(uh_lons, uh_lats, uh_masked,
-                                    levels=UH_LEVELS, cmap=UH_CMAP, norm=UH_NORM,
-                                    extend='max', transform=ccrs.PlateCarree(), zorder=15)
-                mappable = cf_uh
-            else:
-                mappable = plt.cm.ScalarMappable(norm=UH_NORM, cmap=UH_CMAP)
-                mappable.set_array([]) 
-            
-            ax_cbar_max = fig.add_axes([0.3, 0.03, 0.4, 0.015]) 
-            plt.colorbar(mappable, cax=ax_cbar_max, orientation='horizontal', 
-                         label='2-5km Max UH (>25 m$^2$/s$^2$)', extend='max')
 
         # HODOGRAPHS
         legend_elements = [
@@ -203,9 +167,7 @@ def process_forecast_hour(date_obj, date_str, run, fhr):
         ]
         ax.legend(handles=legend_elements, loc='upper left', title="Hodograph Layers", framealpha=0.9).set_zorder(100)
 
-        # ==============================================================
-        # CRITICAL FIX: Filter dataset down to requested pressure levels 
-        # ==============================================================
+        # Filter dataset down to requested pressure levels 
         ds_wind_filtered = ds_wind.sel(isobaricInhPa=REQUESTED_LEVELS, method='nearest')
         
         u_kts = ds_wind_filtered['u'].metpy.convert_units('kts').values.squeeze()
@@ -233,8 +195,8 @@ def process_forecast_hour(date_obj, date_str, run, fhr):
                 sub_ax.axis('off')
 
         valid_time = date_obj + timedelta(hours=fhr)
-        valid_str = valid_time.strftime("%a %H:%MZ") 
-        plt.suptitle(f"HRRRCast CAPE + Max UH Tracks | Run: {date_str} {run}Z | Valid: {valid_str} (f{fhr:02d})", 
+        valid_str = valid_time.strftime("%a %H:%00Z") # Formatted to hardcode minutes to 00 visually just in case
+        plt.suptitle(f"HRRRCast CAPE + Hodographs | Run: {date_str} {run}Z | Valid: {valid_str} (f{fhr:02d})", 
                      fontsize=20, weight='bold', y=0.98)
         
         os.makedirs(OUTPUT_DIR, exist_ok=True)
