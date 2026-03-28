@@ -18,7 +18,7 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v4
       with:
-        # Using the built-in GitHub token instead of a custom secret
+        # Using the built-in GitHub token
         token: ${{ secrets.GITHUB_TOKEN }}
         fetch-depth: 0
 
