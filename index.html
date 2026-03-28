@@ -136,7 +136,7 @@
 </head>
 <body>
 
-    <h2 id="page-title">HRRRCast Hodograph Analysis (Live)</h2>
+    <h2 id="page-title">HRRRCast CAPE & Hodographs (Live)</h2>
     
     <div class="controls">
         <span id="run-info">Loading...</span> | 
@@ -155,21 +155,16 @@
         <img id="forecast-img" src="" alt="Map Display" onerror="this.style.display='none'">
     </div>
 
+<script src="config.js"></script>
+
 <script>
     // CONFIGURATION
     const totalHours = 48;
     const imageDir = "images/";
     
-    // --- DATE LOGIC ---
-    const now = new Date();
-    // Match the Python script delay: subtract 5 hours from current UTC time
-    now.setUTCHours(now.getUTCHours() - 5);
-
-    const yyyy = now.getUTCFullYear();
-    const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
-    const dd = String(now.getUTCDate()).padStart(2, '0');
-    const runHour = String(now.getUTCHours()).padStart(2, '0');
-    const dateStr = `${yyyy}${mm}${dd}`;
+    // --- SAFE FALLBACK (In case you view it locally before running the script) ---
+    const dateStr = typeof RUN_DATE !== 'undefined' ? RUN_DATE : '20260328';
+    const runHour = typeof RUN_HOUR !== 'undefined' ? RUN_HOUR : '12';
 
     document.getElementById('run-info').textContent = `Run: ${dateStr} ${runHour}Z`;
 
