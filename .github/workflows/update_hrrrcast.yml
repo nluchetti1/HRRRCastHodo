@@ -1,0 +1,60 @@
+name: Update HRRRCast Hodograph Map
+
+on:
+  schedule:
+    # Run at minute 20 of EVERY hour
+    - cron: '20 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.ACTION_TOKEN }}
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libeccodes0
+        pip install xarray matplotlib cartopy metpy requests numpy cfgrib ecmwflibs
+
+    - name: Run Plotting Script
+      run: python plot_hrrrcast_hodographs.py
+
+    - name: Commit and Push New Images
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        
+        # Remove junk files
+        rm -f *.idx
+        
+        # CRITICAL FIX: Stage ALL changes (New files + Deleted files)
+        git add -A
+        
+        # Check if there are changes to commit
+        if git diff --staged --quiet; then
+          echo "No changes to commit."
+        else
+          # Commit first (saves state including deletions)
+          git commit -m "Auto-update HRRRCast plots for $(date -u)"
+          
+          # Then pull (safely merges history)
+          git pull --rebase
+          
+          # Then push
+          git push
+        fi
