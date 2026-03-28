@@ -49,9 +49,8 @@ UH_CMAP = mcolors.ListedColormap(uh_colors)
 UH_NORM = mcolors.BoundaryNorm(UH_LEVELS, UH_CMAP.N)
 
 def get_latest_run_time():
-    # HRRRCast runs hourly. We subtract 2 hours from current UTC time to ensure 
-    # the S3 bucket has fully populated the files for that specific run hour.
-    now = datetime.datetime.utcnow() - datetime.timedelta(hours=2)
+    # HRRRCast experimental runs appear to have a ~5 hour lag on the S3 bucket.
+    now = datetime.datetime.utcnow() - datetime.timedelta(hours=5)
     run = now.strftime('%H')
     date_str = now.strftime('%Y%m%d')
     return date_str, run, now
@@ -60,7 +59,7 @@ def download_file(date_str, run, fhr):
     # Base URL matching the S3 bucket path: noaa-gsl-experimental-pds / HRRRCast / YYYYMMDD / HH
     base_url = f"https://noaa-gsl-experimental-pds.s3.amazonaws.com/HRRRCast/{date_str}/{run}"
     
-    # Filename matching the screenshot: hrrrcast.avg.tHHz.pgrb2.fXX
+    # Filename matching the bucket structure: hrrrcast.avg.tHHz.pgrb2.fXX
     filename = f"hrrrcast.avg.t{run}z.pgrb2.f{fhr:02d}" 
     url = f"{base_url}/{filename}"
     headers = {'User-Agent': 'Mozilla/5.0'}
