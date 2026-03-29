@@ -44,16 +44,17 @@
         button#download-btn:hover { background-color: #218838; }
         button#download-btn:disabled { background-color: #ccc; cursor: not-allowed; }
 
-        /* TIMELINE BAR */
+        /* TIMELINE BAR - Updated to Flexbox to handle weird hour amounts */
         .timeline-container {
-            display: grid;
-            grid-template-columns: repeat(24, 1fr);
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
             width: 100%;
             max-width: 1000px; 
-            gap: 1px;
+            gap: 2px;
             margin-bottom: 5px;
             background: #fff;
-            padding: 3px;
+            padding: 5px;
             border-radius: 5px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
@@ -62,11 +63,13 @@
             background: #e9ecef;
             border: 1px solid #ced4da;
             text-align: center;
-            font-size: 10px;
-            padding: 4px 0;
+            font-size: 11px;
+            padding: 4px 8px;
+            min-width: 25px;
             cursor: pointer;
             user-select: none;
             transition: all 0.1s ease;
+            border-radius: 3px;
         }
 
         .time-box:hover {
@@ -158,15 +161,19 @@
 <script src="config.js"></script>
 
 <script>
-    // CONFIGURATION
-    const totalHours = 48;
     const imageDir = "images/";
     
-    // --- SAFE FALLBACK (In case you view it locally before running the script) ---
+    // Fallback variables if config.js hasn't been created yet
     const dateStr = typeof RUN_DATE !== 'undefined' ? RUN_DATE : '20260328';
     const runHour = typeof RUN_HOUR !== 'undefined' ? RUN_HOUR : '12';
+    // If the python script fails to pass array, fallback to standard 1-48
+    const validHours = typeof AVAILABLE_HOURS !== 'undefined' && AVAILABLE_HOURS.length > 0 
+        ? AVAILABLE_HOURS 
+        : Array.from({length: 48}, (_, i) => i + 1);
 
-    document.getElementById('run-info').textContent = `Run: ${dateStr} ${runHour}Z`;
+    const totalHours = validHours.length;
+
+    document.getElementById('run-info').textContent = `Run: ${dateStr} ${runHour}Z (${totalHours} frames valid)`;
 
     // --- ELEMENTS ---
     const timeline = document.getElementById('timeline');
@@ -193,36 +200,42 @@
         loader.style.display = 'none';
     };
 
-    // --- BUILD TIMELINE ---
-    for (let i = 1; i <= totalHours; i++) {
+    // --- BUILD DYNAMIC TIMELINE ---
+    validHours.forEach(hour => {
         let box = document.createElement('div');
         box.className = 'time-box';
-        box.textContent = `f${i}`;
-        box.id = `box-${i}`;
+        box.textContent = `f${hour}`;
+        box.id = `box-${hour}`;
         
-        box.addEventListener('mouseenter', () => setImage(i));
-        box.addEventListener('click', () => setImage(i));
+        box.addEventListener('mouseenter', () => setImage(hour));
+        box.addEventListener('click', () => setImage(hour));
 
         timeline.appendChild(box);
         boxes.push(box);
-    }
+    });
 
-    setImage(1);
+    // Start by loading the first available hour
+    if(validHours.length > 0) setImage(validHours[0]);
 
-    // Keyboard Controls
+    // Dynamic Keyboard Controls
     document.addEventListener('keydown', (e) => {
         let currentSrc = imgElement.src;
         let match = currentSrc.match(/_f(\d+)\.png/);
         if (!match) return;
         
         let currentFhr = parseInt(match[1]);
+        // Find where we are in the dynamic array
+        let currentIndex = validHours.indexOf(currentFhr);
+        if (currentIndex === -1) return;
 
         if (e.key === "ArrowRight") {
-            let next = currentFhr + 1;
-            if (next <= totalHours) setImage(next);
+            if (currentIndex + 1 < validHours.length) {
+                setImage(validHours[currentIndex + 1]);
+            }
         } else if (e.key === "ArrowLeft") {
-            let prev = currentFhr - 1;
-            if (prev >= 1) setImage(prev);
+            if (currentIndex - 1 >= 0) {
+                setImage(validHours[currentIndex - 1]);
+            }
         }
     });
 
@@ -244,12 +257,13 @@
                 height: imgElement.naturalHeight || 800
             });
 
-            for (let i = 1; i <= totalHours; i++) {
-                const fhrStr = String(i).padStart(2, '0');
+            // Loop through our array of known good hours
+            for (let i = 0; i < validHours.length; i++) {
+                const fhrStr = String(validHours[i]).padStart(2, '0');
                 const filename = `hrrrcast_hodo_cape_${dateStr}_${runHour}z_f${fhrStr}.png`;
                 const url = imageDir + filename;
                 
-                const percent = Math.round((i / totalHours) * 100);
+                const percent = Math.round(((i + 1) / validHours.length) * 100);
                 btn.textContent = `Adding Frames (${percent}%)...`;
 
                 const img = new Image();
