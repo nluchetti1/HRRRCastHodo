@@ -43,30 +43,30 @@ CAPE_CMAP = mcolors.ListedColormap(CAPE_COLORS)
 CAPE_NORM = mcolors.BoundaryNorm(CAPE_LEVELS, CAPE_CMAP.N)
 
 def get_latest_valid_run():
-    # Start checking from 2 hours ago, and look back up to 12 hours to account for S3 lag.
-    # CRITICAL FIX: Zero out the minutes/seconds so the valid time displays cleanly!
     now = datetime.datetime.utcnow().replace(minute=0, second=0, microsecond=0)
     
-    for hours_back in range(2, 13):
+    # Check up to 24 hours back. We'll just look for a run that has at least f03 
+    # so we don't accidentally grab a completely useless 1-hour run.
+    for hours_back in range(2, 25):
         check_time = now - datetime.timedelta(hours=hours_back)
         run = check_time.strftime('%H')
         date_str = check_time.strftime('%Y%m%d')
         
         base_url = f"https://noaa-gsl-experimental-pds.s3.amazonaws.com/HRRRCast/{date_str}/{run}"
-        test_file = f"hrrrcast.avg.t{run}z.pgrb2.f01"
+        test_file = f"hrrrcast.avg.t{run}z.pgrb2.f03"
         test_url = f"{base_url}/{test_file}"
         
         try:
             r = requests.get(test_url, stream=True, timeout=10)
             if r.status_code == 200:
                 r.close()
-                print(f"Found latest valid run: {date_str} {run}Z (Lag: {hours_back} hours)")
+                print(f"Found run with at least 3 hours of data: {date_str} {run}Z (Lag: {hours_back} hours)")
                 return date_str, run, check_time
             r.close()
         except requests.RequestException:
             pass
             
-    print("Could not find any valid runs in the last 12 hours!")
+    print("Could not find ANY decent runs in the last 24 hours. Chaos reigns.")
     fallback = now - datetime.timedelta(hours=5)
     return fallback.strftime('%Y%m%d'), fallback.strftime('%H'), fallback
 
@@ -81,17 +81,17 @@ def download_file(date_str, run, fhr):
         except: pass
 
     try:
-        print(f"Downloading {filename} from S3...")
+        print(f"  -> Attempting download of f{fhr:02d}...")
         with requests.get(url, stream=True, timeout=60, headers=headers) as r:
             if r.status_code == 404: 
-                print(f"Missing: {url}")
+                print(f"     [MISSING] f{fhr:02d} does not exist on S3.")
                 return None
             r.raise_for_status()
             with open(filename, 'wb') as f:
                 for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
         return filename
     except Exception as e:
-        print(f"Download failed: {e}")
+        print(f"     [ERROR] Download failed for f{fhr:02d}: {e}")
         return None
 
 def get_segment_color(p_start, p_end):
@@ -115,12 +115,10 @@ def cleanup_old_runs(current_date, current_run):
             except: pass
 
 def process_forecast_hour(date_obj, date_str, run, fhr):
-    print(f"\nProcessing F{fhr:02d}...")
     grib_file = download_file(date_str, run, fhr)
     
     if not grib_file: 
-        print("Data file unavailable.")
-        return
+        return False # Return False so we don't log this as a successful hour
 
     try:
         ds_u = xr.open_dataset(grib_file, engine='cfgrib', backend_kwargs={'filter_by_keys': {'typeOfLevel': 'isobaricInhPa', 'shortName': 'u'}})
@@ -167,7 +165,6 @@ def process_forecast_hour(date_obj, date_str, run, fhr):
         ]
         ax.legend(handles=legend_elements, loc='upper left', title="Hodograph Layers", framealpha=0.9).set_zorder(100)
 
-        # Filter dataset down to requested pressure levels 
         ds_wind_filtered = ds_wind.sel(isobaricInhPa=REQUESTED_LEVELS, method='nearest')
         
         u_kts = ds_wind_filtered['u'].metpy.convert_units('kts').values.squeeze()
@@ -195,19 +192,21 @@ def process_forecast_hour(date_obj, date_str, run, fhr):
                 sub_ax.axis('off')
 
         valid_time = date_obj + timedelta(hours=fhr)
-        valid_str = valid_time.strftime("%a %H:%00Z") # Formatted to hardcode minutes to 00 visually just in case
+        valid_str = valid_time.strftime("%a %H:%00Z")
         plt.suptitle(f"HRRRCast CAPE + Hodographs | Run: {date_str} {run}Z | Valid: {valid_str} (f{fhr:02d})", 
                      fontsize=20, weight='bold', y=0.98)
         
         os.makedirs(OUTPUT_DIR, exist_ok=True)
         filename_png = f"{OUTPUT_DIR}/hrrrcast_hodo_cape_{date_str}_{run}z_f{fhr:02d}.png"
         plt.savefig(filename_png, bbox_inches='tight', dpi=100) 
-        print(f"   Saved: {filename_png}")
+        print(f"     [SUCCESS] Saved image for f{fhr:02d}")
         plt.close(fig)
+        return True # Successfully processed!
 
     except Exception: 
-        print(f"Error processing F{fhr}:")
+        print(f"     [ERROR] Failed to process F{fhr}:")
         traceback.print_exc()
+        return False
     finally:
         if grib_file and os.path.exists(grib_file): 
             try: os.remove(grib_file)
@@ -215,17 +214,26 @@ def process_forecast_hour(date_obj, date_str, run, fhr):
 
 if __name__ == "__main__":
     date_str, run, date_obj = get_latest_valid_run()
-    print(f"Starting Process for Run: {date_str} {run}Z")
+    print(f"\n=========================================")
+    print(f"STARTING PROCESSING FOR RUN: {date_str} {run}Z")
+    print(f"=========================================\n")
+    
+    # Array to track which hours actually survived the gauntlet
+    successful_fhrs = []
     
     for fhr in range(1, 49): 
-        process_forecast_hour(date_obj, date_str, run, fhr)
+        success = process_forecast_hour(date_obj, date_str, run, fhr)
+        if success:
+            successful_fhrs.append(fhr)
     
     cleanup_old_runs(date_str, run)
     
-    # WRITE CONFIG FILE FOR HTML
-    print("Writing config.js for web front-end...")
+    # Write dynamic configuration file for HTML
+    print("\nWriting config.js for web front-end...")
     with open("config.js", "w") as f:
         f.write(f'const RUN_DATE = "{date_str}";\n')
         f.write(f'const RUN_HOUR = "{run}";\n')
+        # This writes something like: const AVAILABLE_HOURS = [1, 2, 3, 4...];
+        f.write(f'const AVAILABLE_HOURS = {successful_fhrs};\n')
 
-    print("Done.")
+    print(f"Done! Successfully plotted {len(successful_fhrs)} frames out of 48.")
