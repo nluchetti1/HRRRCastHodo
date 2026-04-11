@@ -1,3 +1,3 @@
 const RUN_DATE = "20260411";
-const RUN_HOUR = "16";
-const AVAILABLE_HOURS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+const RUN_HOUR = "17";
+const AVAILABLE_HOURS = [1, 2, 3, 4];
